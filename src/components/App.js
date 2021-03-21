@@ -10,22 +10,6 @@ const App = () => {
       </Switch>
     </React.Fragment>
   );
-
-  //return <CreatorPage />;
-  // return (
-  //   <div className="layout-grid">
-  //     <div className="header"></div>
-  //     <div className="nav">
-  //       <Spider speed={0.8} />
-  //     </div>
-
-  //     <div className="content">
-  //       <KakuroCreatorPage />
-  //     </div>
-  //     <div className="side-bar"></div>
-  //     <div className="footer"></div>
-  //   </div>
-  // );
 };
 
 export default App;

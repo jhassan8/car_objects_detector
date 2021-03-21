@@ -1,0 +1,20 @@
+.boton {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  color: white;
+}
+
+.boton:hover {
+  cursor: pointer;
+}
+
+.box {
+  position: absolute;
+  top: var(--top);
+  left: var(--left);
+  width: var(--width);
+  height: var(--height);
+  border: solid 2px blue;
+  background-color: transparent;
+}
