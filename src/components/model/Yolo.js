@@ -1,4 +1,5 @@
 import * as tf from "@tensorflow/tfjs";
+import * as tfaux from "./tensorflow-aux";
 import * as configs from "./configs";
 import * as templates from "./templates";
 
@@ -10,7 +11,6 @@ const GRIDS = [
   templates.getGrid(13)
 ];
 const NUM_CLASSES = configs.getNumClasses();
-const MASK = templates.getMask();
 const MODEL_SIZE = configs.getModelSize();
 
 export const getTrainedModel = async () => {
@@ -26,32 +26,33 @@ export const getTrainedModel = async () => {
   return await tf.loadLayersModel("../../assets/model/model.json");
 };
 
-export const predict = async (image, model) => {
-  let imageTensor = tf.expandDims(tf.browser.fromPixels(image), 0);
-  imageTensor = preProcess(imageTensor, [416, 416]);
+export const predict = (image, model) => {
+  let originalHeight;
+  let originalWidth;
+  let prediction;
+  tf.tidy(() => {
+    let imageTensor = tf.expandDims(tf.browser.fromPixels(image), 0);
+    originalHeight = imageTensor.shape[1];
+    originalWidth = imageTensor.shape[2];
+    imageTensor = preProcess(imageTensor, [416, 416]);
 
-  const rawPredictions = model.predict(imageTensor);
-  const predictions = [];
-  for (let i = 0; i < 3; i++) {
-    const prediction = decode(rawPredictions[i], NUM_CLASSES, i);
-    predictions.push(
-      prediction.reshape([-1, prediction.shape[prediction.shape.length - 1]])
-    );
-  }
-  const prediction = tf.concat(predictions, 0);
+    const rawPredictions = model.predict(imageTensor);
+    const predictions = [];
+    for (let i = 0; i < 3; i++) {
+      const prediction = decode(rawPredictions[i], NUM_CLASSES, i);
+      predictions.push(
+        prediction.reshape([-1, prediction.shape[prediction.shape.length - 1]])
+      );
+    }
+    prediction = tf.concat(predictions, 0);
+    tf.keep(prediction);
+  });
 
-  const filteredPrediction = await filterScores(prediction, NUM_CLASSES);
-  const _boxes = postProcess(filteredPrediction, image);
+  const filteredPrediction = filterScores(prediction, NUM_CLASSES);
+  const _boxes = postProcess(filteredPrediction, originalHeight, originalWidth);
+  filteredPrediction.dispose();
+  prediction.dispose();
   return _boxes;
-
-  // imageTensor = tf.cast(imageTensor, "int32");
-  // imageTensor = tf.squeeze(imageTensor);
-  // const canvas = document.createElement("CANVAS");
-  // canvas.style.height = imageTensor.shape[0] + "px";
-  // canvas.style.width = imageTensor.shape[1] + "px";
-  // const body = document.getElementById("body");
-  // body.appendChild(canvas);
-  // tf.browser.toPixels(imageTensor, canvas);
 };
 
 const getScoresByClass = (predConf, predProb, numClasses) => {
@@ -118,11 +119,12 @@ const decode = (convOutput, numClasses, i = 0) => {
   return tf.concat([predXYWH, scoresByClass], -1);
 };
 
-const filterScores = async (prediction) => {
+const filterScores = (prediction) => {
   //add an index column to prediction to retrieve the values by index later
   const index = tf
     .range(0, prediction.shape[0])
     .reshape([prediction.shape[0], 1]);
+
   prediction = tf.concat([index, prediction], 1);
 
   const [idx, boxes, clss, scores] = tf.split(prediction, [1, 4, 1, 1], -1);
@@ -132,20 +134,44 @@ const filterScores = async (prediction) => {
   for (let cls = 0; cls < NUM_CLASSES; cls++) {
     const clsTensor = tf.tensor1d([cls], "float32");
     const mask = clss.equal(clsTensor).tile([1, 2]);
-    let indexedClassScores = await tf.booleanMaskAsync(indexedScores, mask);
+
+    let indexedClassScores = tfaux.booleanMaskSync(indexedScores, mask);
     indexedClassScores = indexedClassScores.reshape([-1, 2]);
     const [_idx, classScores] = tf.split(indexedClassScores, [1, 1], 1);
     const classIndex = tf.range(0, _idx.shape[0]);
     const classMaxScoreIndex = classScores.reshape([-1]).argMax();
     const classMask = classIndex.equal(classMaxScoreIndex);
-    const maxScoreIndex = await tf.booleanMaskAsync(
-      _idx.reshape([-1]),
-      classMask
-    );
+    const maxScoreIndex = tfaux.booleanMaskSync(_idx.reshape([-1]), classMask);
     classesMaxIndex.push(maxScoreIndex.dataSync());
+
+    clsTensor.dispose();
+    mask.dispose();
+    indexedClassScores.dispose();
+    _idx.dispose();
+    classScores.dispose();
+    classIndex.dispose();
+    classMaxScoreIndex.dispose();
+    classMask.dispose();
+    maxScoreIndex.dispose();
   }
-  classesMaxIndex.forEach((idx) => (MASK[idx] = true));
-  const filteredPrediction = await tf.booleanMaskAsync(prediction, MASK);
+  let mask = tf.zeros([10647], "bool").reshape([10647, 1]);
+  classesMaxIndex.forEach((i) => {
+    const idxTensor = tf.tensor1d([i[0]]);
+    mask = mask.logicalOr(idx.equal(idxTensor));
+    idxTensor.dispose();
+  });
+
+  const filteredPrediction = tfaux.booleanMaskSync(
+    prediction,
+    mask.reshape([10647])
+  );
+  prediction.dispose();
+  idx.dispose();
+  boxes.dispose();
+  clss.dispose();
+  scores.dispose();
+  indexedScores.dispose();
+
   return filteredPrediction;
 };
 
@@ -156,27 +182,32 @@ const preProcess = (imageTensor, targetSize) => {
   const [nh, nw] = [Math.floor(h * scale), Math.floor(w * scale)];
   const resizedImage = tf.image.resizeBilinear(imageTensor, [nh, nw]);
 
-  const verticalPadd = Math.floor((th - nh) / 2);
-  const horizontalPadd = Math.floor((tw - nw) / 2);
+  const topPadd = Math.floor((th - nh) / 2);
+  const bottomPadd = th - topPadd - nh;
+  const leftPadd = Math.floor((tw - nw) / 2);
+  const rightPadd = tw - leftPadd - nw;
   let paddedImage = tf.layers
-    .zeroPadding2d({ padding: [verticalPadd, horizontalPadd] })
+    .zeroPadding2d({
+      padding: [
+        [topPadd, bottomPadd],
+        [leftPadd, rightPadd]
+      ]
+    })
     .apply(resizedImage);
   paddedImage = paddedImage.div(tf.scalar(255));
 
   return paddedImage;
 };
 
-const postProcess = (prediction, image) => {
+const postProcess = (prediction, height, width) => {
   const predictions = prediction.arraySync();
   const _boxes = [];
   predictions.forEach((pred) =>
     _boxes.push([
-      (pred[1] * image.width) / MODEL_SIZE -
-        (pred[3] * image.width) / (MODEL_SIZE * 2),
-      (pred[2] * image.height) / MODEL_SIZE -
-        (pred[4] * image.height) / (MODEL_SIZE * 2),
-      (pred[3] * image.width) / MODEL_SIZE,
-      (pred[4] * image.height) / MODEL_SIZE
+      (pred[1] * width) / MODEL_SIZE - (pred[3] * width) / (MODEL_SIZE * 2),
+      (pred[2] * height) / MODEL_SIZE - (pred[4] * height) / (MODEL_SIZE * 2),
+      (pred[3] * width) / MODEL_SIZE,
+      (pred[4] * height) / MODEL_SIZE
     ])
   );
   return _boxes;
