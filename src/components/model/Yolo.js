@@ -143,35 +143,17 @@ const filterScores = (prediction) => {
     const classMask = classIndex.equal(classMaxScoreIndex);
     const maxScoreIndex = tfaux.booleanMaskSync(_idx.reshape([-1]), classMask);
     classesMaxIndex.push(maxScoreIndex.dataSync());
-
-    clsTensor.dispose();
-    mask.dispose();
-    indexedClassScores.dispose();
-    _idx.dispose();
-    classScores.dispose();
-    classIndex.dispose();
-    classMaxScoreIndex.dispose();
-    classMask.dispose();
-    maxScoreIndex.dispose();
   }
   let mask = tf.zeros([10647], "bool").reshape([10647, 1]);
   classesMaxIndex.forEach((i) => {
     const idxTensor = tf.tensor1d([i[0]]);
     mask = mask.logicalOr(idx.equal(idxTensor));
-    idxTensor.dispose();
   });
 
   const filteredPrediction = tfaux.booleanMaskSync(
     prediction,
     mask.reshape([10647])
   );
-  prediction.dispose();
-  idx.dispose();
-  boxes.dispose();
-  clss.dispose();
-  scores.dispose();
-  indexedScores.dispose();
-
   return filteredPrediction;
 };
 

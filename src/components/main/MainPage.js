@@ -1,10 +1,13 @@
 import React, { useEffect, useState } from "react";
+import PropTypes from "prop-types";
+import { connect } from "react-redux";
+import * as modelActions from "../../redux/actions/modelActions";
 import * as yolo from "../model/Yolo";
 import * as tf from "@tensorflow/tfjs";
 import "./main-page.css";
 
-const MainPage = () => {
-  const [model, setModel] = useState(null);
+const MainPage = ({ model, setModel }) => {
+  // const [model, setModel] = useState(null);
   const [boxes, setBoxes] = useState([]);
   const toPredict = "image";
 
@@ -113,4 +116,17 @@ const MainPage = () => {
   );
 };
 
-export default MainPage;
+MainPage.propTypes = {
+  model: PropTypes.object,
+  setModel: PropTypes.func.isRequired
+};
+
+const mapStateToProps = (state) => {
+  return { model: state.model };
+};
+
+const mapDispatchToProps = {
+  setModel: modelActions.setModel
+};
+
+export default connect(mapStateToProps, mapDispatchToProps)(MainPage);

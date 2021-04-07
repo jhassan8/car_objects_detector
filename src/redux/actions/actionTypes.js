@@ -1,4 +1,3 @@
 export default {
-  ACTION: "action"
-  //define actions to export
+  SET_MODEL: "SET_MODEL"
 };
