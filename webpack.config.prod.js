@@ -3,28 +3,29 @@ const path = require("path");
 const HtmlWebpackPlugin = require("html-webpack-plugin");
 const MiniCssExtractPlugin = require("mini-css-extract-plugin");
 const webpackBundleAnalyzer = require("webpack-bundle-analyzer");
+const CopyWebpackPlugin = require('copy-webpack-plugin');
 
 process.env.NODE_ENV = "production";
 
 module.exports = {
   mode: "production",
   target: "web",
-  devtool: "source-map",
+  devtool: "cheap-module-source-map",
   entry: "./src/index",
   output: {
     path: path.resolve(__dirname, "build"),
     publicPath: "/",
-    filename: "bundle.js"
+    filename: "main.[contenthash].js"
   },
   plugins: [
     new webpackBundleAnalyzer.BundleAnalyzerPlugin({ analyzerMode: "static" }),
     new MiniCssExtractPlugin({
       filename: "[name].[contenthash].css"
     }),
-    new webpack.DefinePlugin({
-      "process.env.NODE_ENV": JSON.stringify(process.env.NODE_ENV),
-      "process.env.API_URL": JSON.stringify("http://localhost:3001")
-    }),
+    new CopyWebpackPlugin([{ 
+      from: path.resolve(__dirname, '', 'assets'), 
+      to: path.resolve(__dirname, 'build', 'assets') 
+    }]),
     new HtmlWebpackPlugin({
       template: "src/index.html",
       favicon: "src/favicon.ico",
@@ -68,6 +69,10 @@ module.exports = {
             }
           }
         ]
+      },
+      {
+        test: /\.(jpe?g|jfif|png|gif|woff|woff2|eot|ttf|svg)(\?[a-z0-9=.]+)?$/,
+        use: "url-loader?limit=100000"
       }
     ]
   }
